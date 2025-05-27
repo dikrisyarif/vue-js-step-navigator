@@ -24,14 +24,15 @@
           :key="index"
           class="attachment-item border rounded px-3 py-2 mb-2"
           style="cursor: pointer"
+          @click="openEditModal(index)" 
         >
           <div class="d-flex justify-content-between">
             <div>
               <div class="font-weight-bold">
-                #{{ index + 1 }} - {{ item.assignType }} : {{ item.employee }}
+                #{{ index + 1 }} - {{ getAssignTypeText(item) }} : {{ getEmployeeText(item) }}
                 <span v-if="item.isHoApprover"> (HO Approver)</span>
               </div>
-              <div class="text-muted">{{ item.position }}</div>
+              <div class="text-muted">{{ getPositionText(item) }}</div>
             </div>
             <b-button
               variant="link"
@@ -46,15 +47,16 @@
       </div>
     </CCardBody>
 
-    <!-- Modal: Add/Edit Multiple Approvals -->
+    <!-- Modal Add/Edit -->
     <b-modal
       v-model="showModal"
       @ok="submitApprovals"
-      ok-title="Save All"
+      :ok-title="editIndex !== null ? 'Save Changes' : 'Save All'"
       size="xl"
+      :title="editIndex !== null ? 'Edit Approver' : 'Add Approver'"
     >
-      <!-- Header Add Button -->
-      <div class="d-flex justify-content-between align-items-center mb-3">
+      <!-- Header Add Button (hanya untuk mode tambah) -->
+      <div v-if="editIndex === null" class="d-flex justify-content-between align-items-center mb-3">
         <h6 class="mb-0"></h6>
         <b-button size="sm" @click="addApprovalRow"> ➕ Add Approval </b-button>
       </div>
@@ -96,7 +98,7 @@
             Is HO Approver
           </b-form-checkbox>
         </div>
-        <div class="col-md-1 text-right">
+        <div class="col-md-1 text-right" v-if="editIndex === null">
           <b-button size="sm" @click="removeApprovalRow(index)">🗑</b-button>
         </div>
       </div>
@@ -138,26 +140,42 @@ export default {
   },
   data() {
     return {
-      // approvals: [],
       showModal: false,
       approvalBatch: [],
       assignTypeOptions: [],
       positionOptions: [],
       employees: [],
+      allEmployees: [],
+      editIndex: null, // Tambahan untuk mode edit
     };
   },
   mounted() {
-    // console.log('memoID dari Approval: ', this.$store.state.memoId);
+    this.getPositionsAndEmployees();
   },
   methods: {
     openModal() {
       this.showModal = true;
+      this.editIndex = null;
+      // Untuk tambah baru, form kosong
       this.approvalBatch = [
         {
           position: null,
           employee: null,
           assignType: null,
           isHoApprover: false,
+        },
+      ];
+    },
+    openEditModal(index) {
+      this.editIndex = index;
+      this.showModal = true;
+      // Isi form dengan data yang akan diedit (hanya satu row)
+      this.approvalBatch = [
+        {
+          position: this.approvals[index].position,
+          employee: this.approvals[index].employee,
+          assignType: this.approvals[index].assignType,
+          isHoApprover: this.approvals[index].isHoApprover,
         },
       ];
     },
@@ -176,20 +194,27 @@ export default {
       const validEntries = this.approvalBatch.filter(
         (a) => a.position && a.employee && a.assignType
       );
-      if (validEntries.length) {
-        // Tambah ke approvals (yang sebenarnya adalah parent data)
+      if (!validEntries.length) {
+        this.showModal = false;
+        return;
+      }
+      if (this.editIndex !== null) {
+        // mode edit
+        const newApprovals = [...this.approvals];
+        newApprovals[this.editIndex] = validEntries[0];
+        this.approvals = newApprovals;
+      } else {
+        // mode tambah
         this.approvals = [...this.approvals, ...validEntries];
       }
       this.showModal = false;
+      this.editIndex = null;
     },
     removeApproval(index) {
       this.approvals.splice(index, 1);
     },
-    initializeApproval() {
-      this.getPositionsAndEmployees();
-    },
     getPositionsAndEmployees() {
-      this.$loading(true);
+      this.$loading && this.$loading(true);
       BusinessExpenditureService.GetApprovalMaster({})
         .then((response) => {
           if (response.status === httpStatusCode.UNAUTHORIZED) {
@@ -199,12 +224,8 @@ export default {
           ) {
             const data = response.data.Data;
             this.assignTypeOptions = data.AssignTypes || [];
-
             this.allEmployees = data.Employees || [];
             this.positionOptions = data.Positions || [];
-
-            // Normalisasi struktur data jika perlu
-            // contoh: pastikan allEmployees punya { employeeId, employeeName, PositionId }
           } else {
             this.$swal("Info", this.$globalfunc.ErrorFormat(response), "error");
           }
@@ -213,7 +234,7 @@ export default {
           this.$swal("Info", this.$globalfunc.ErrorFormat(e), "error");
         })
         .finally(() => {
-          this.$loading(false);
+          this.$loading && this.$loading(false);
         });
     },
     getEmployeeOptions(position) {
@@ -233,13 +254,27 @@ export default {
       }
     },
     onPositionSelect(item) {
-      // Clear employee if it doesn't match selected position
       if (
         item.employee &&
         item.employee.PositionId !== item.position.PositionId
       ) {
         item.employee = null;
       }
+    },
+    getPositionText(item) {
+      if (typeof item.position === 'string') return item.position;
+      if (item.position && item.position.PositionName) return item.position.PositionName;
+      return '';
+    },
+    getEmployeeText(item) {
+      if (typeof item.employee === 'string') return item.employee;
+      if (item.employee && item.employee.EmployeeName) return item.employee.EmployeeName;
+      return '';
+    },
+    getAssignTypeText(item) {
+      if (typeof item.assignType === 'string') return item.assignType;
+      if (item.assignType && item.assignType.Description) return item.assignType.Description;
+      return '';
     },
   },
 };
