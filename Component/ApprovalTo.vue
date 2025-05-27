@@ -67,16 +67,20 @@
       >
         <div class="col-md-3">
           <v-select
-            :options="positions"
+            :options="positionOptions"
             v-model="item.position"
             placeholder="Position"
+            label="PositionName"
+            @input="onPositionSelect(item)"
           />
         </div>
         <div class="col-md-3">
           <v-select
-            :options="employees"
+            :options="getEmployeeOptions(item.position)"
             v-model="item.employee"
             placeholder="Employee"
+            label="EmployeeName"
+            @input="onEmployeeSelect(item)"
           />
         </div>
         <div class="col-md-3">
@@ -84,12 +88,13 @@
             :options="assignTypeOptions"
             v-model="item.assignType"
             placeholder="Assign Type"
+            label="Description"
           />
         </div>
         <div class="col-md-2 text-right">
-          <b-form-checkbox v-model="item.isHoApprover"
-            >Is HO Approver</b-form-checkbox
-          >
+          <b-form-checkbox v-model="item.isHoApprover">
+            Is HO Approver
+          </b-form-checkbox>
         </div>
         <div class="col-md-1 text-right">
           <b-button size="sm" @click="removeApprovalRow(index)">🗑</b-button>
@@ -100,15 +105,13 @@
 </template>
 
 <script>
-import {
-  BButton,
-  BCard,
-  BModal,
-  BFormGroup,
-  BFormCheckbox,
-} from "bootstrap-vue";
+import { BButton, BModal, BFormCheckbox } from "bootstrap-vue";
 import vSelect from "vue-select";
 import "vue-select/dist/vue-select.css";
+import BusinessExpenditureService from "../Script/BusinessExpenditureService";
+import variable from "../../../../Shared/Variable.vue";
+import httpStatusCode from "../../../../Shared/Constants.vue";
+import _ from "lodash";
 
 export default {
   components: {
@@ -138,13 +141,13 @@ export default {
       // approvals: [],
       showModal: false,
       approvalBatch: [],
-      assignTypeOptions: ["Primary", "Secondary", "Tertiary"],
-      positions: ["Manager", "Supervisor", "Staff"],
-      employees: ["John Doe", "Jane Smith", "Bob Martin"],
+      assignTypeOptions: [],
+      positionOptions: [],
+      employees: [],
     };
   },
-  mounted() { 
-    console.log('memoID dari Approval: ', this.$store.state.memoId);
+  mounted() {
+    // console.log('memoID dari Approval: ', this.$store.state.memoId);
   },
   methods: {
     openModal() {
@@ -181,6 +184,62 @@ export default {
     },
     removeApproval(index) {
       this.approvals.splice(index, 1);
+    },
+    initializeApproval() {
+      this.getPositionsAndEmployees();
+    },
+    getPositionsAndEmployees() {
+      this.$loading(true);
+      BusinessExpenditureService.GetApprovalMaster({})
+        .then((response) => {
+          if (response.status === httpStatusCode.UNAUTHORIZED) {
+            this.$globalfunc.TokenValidator(response.status);
+          } else if (
+            typeof response.data !== String(httpStatusCode.UNDEFINED)
+          ) {
+            const data = response.data.Data;
+            this.assignTypeOptions = data.AssignTypes || [];
+
+            this.allEmployees = data.Employees || [];
+            this.positionOptions = data.Positions || [];
+
+            // Normalisasi struktur data jika perlu
+            // contoh: pastikan allEmployees punya { employeeId, employeeName, PositionId }
+          } else {
+            this.$swal("Info", this.$globalfunc.ErrorFormat(response), "error");
+          }
+        })
+        .catch((e) => {
+          this.$swal("Info", this.$globalfunc.ErrorFormat(e), "error");
+        })
+        .finally(() => {
+          this.$loading(false);
+        });
+    },
+    getEmployeeOptions(position) {
+      if (!position) return this.allEmployees;
+      return this.allEmployees.filter(
+        (e) => e.PositionId === position.PositionId
+      );
+    },
+    onEmployeeSelect(item) {
+      if (item.employee && !item.position) {
+        const emp = this.allEmployees.find((e) => e.employeeId === item.employee.employeeId);
+        if (emp) {
+          item.position = this.positionOptions.find(
+            (p) => p.PositionId === emp.PositionId
+          );
+        }
+      }
+    },
+    onPositionSelect(item) {
+      // Clear employee if it doesn't match selected position
+      if (
+        item.employee &&
+        item.employee.PositionId !== item.position.PositionId
+      ) {
+        item.employee = null;
+      }
     },
   },
 };
