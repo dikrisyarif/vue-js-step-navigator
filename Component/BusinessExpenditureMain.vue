@@ -38,10 +38,16 @@
         class="btn btn-secondary btn-md mb-3"
         @click="step--"
       >
-        Kembali
-      </button>
+        Back
+      </button> 
       <button class="btn btn-primary btn-md mb-3" @click="submitForm">
-        {{ step === 4 ? "Submit" : "Save" }}
+        {{
+          step === 4
+            ? "Submit"
+            : $store.state.statusMemo !== "D"
+            ? "Next"
+            : "Save"
+        }}
       </button>
     </div>
   </div>
@@ -219,6 +225,10 @@ export default {
     },
 
     async submitForm() {
+      if (this.$store.state.statusMemo !== "D") {
+        this.step++;
+        return;
+      }
       if (this.step === 1) {
         const isChanged = this.$refs.expenditureForm.isFormChanged();
         console.log("[submitForm] step 1, isFormChanged:", isChanged);
