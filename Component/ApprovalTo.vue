@@ -2,7 +2,7 @@
   <div>
     <CCardBody class="custom-card-body">
       <div class="d-flex justify-content-between align-items-center mb-3">
-        <h5>Approver List</h5>
+        <h5 class="font-weight-bold">Approver List</h5>
         <b-button variant="outline-primary" @click="openModal">
           ➕ Add Approver
         </b-button>
@@ -24,15 +24,18 @@
           :key="index"
           class="attachment-item border rounded px-3 py-2 mb-2"
           style="cursor: pointer"
-          @click="openEditModal(index)" 
+          @click="openEditModal(index)"
         >
           <div class="d-flex justify-content-between">
             <div>
               <div class="font-weight-bold">
-                #{{ index + 1 }} - {{ getAssignTypeText(item) }} : {{ getEmployeeText(item) }}
-                <span v-if="item.isHoApprover"> (HO Approver)</span>
+                {{ index + 1 }} - {{ getAssignTypeText(item) }} :
+                {{ getEmployeeText(item) }}
               </div>
-              <div class="text-muted">{{ getPositionText(item) }}</div>
+              <span class="ishoapp" v-if="item.isHoApprover">
+                (Is HO Approver)</span
+              >
+              <div class="text-muted pt-2">{{ getPositionText(item) }}</div>
             </div>
             <b-button
               variant="link"
@@ -56,7 +59,10 @@
       :title="editIndex !== null ? 'Edit Approver' : 'Add Approver'"
     >
       <!-- Header Add Button (hanya untuk mode tambah) -->
-      <div v-if="editIndex === null" class="d-flex justify-content-between align-items-center mb-3">
+      <div
+        v-if="editIndex === null"
+        class="d-flex justify-content-between align-items-center mb-3"
+      >
         <h6 class="mb-0"></h6>
         <b-button size="sm" @click="addApprovalRow"> ➕ Add Approval </b-button>
       </div>
@@ -67,7 +73,7 @@
         :key="index"
         class="form-row align-items-center mb-3"
       >
-        <div class="col-md-3">
+        <div class="col-md-4">
           <v-select
             :options="positionOptions"
             v-model="item.position"
@@ -83,9 +89,10 @@
             placeholder="Employee"
             label="EmployeeName"
             @input="onEmployeeSelect(item)"
+            :clearable="true"
           />
         </div>
-        <div class="col-md-3">
+        <div class="col-md-2">
           <v-select
             :options="assignTypeOptions"
             v-model="item.assignType"
@@ -179,6 +186,10 @@ export default {
         },
       ];
     },
+    initializeApproval() {
+      this.getPositionsAndEmployees();
+      this.snapshotInitialApprovalTo();
+    },
     addApprovalRow() {
       this.approvalBatch.push({
         position: null,
@@ -223,6 +234,7 @@ export default {
             typeof response.data !== String(httpStatusCode.UNDEFINED)
           ) {
             const data = response.data.Data;
+            console.log("data approval: ", data);
             this.assignTypeOptions = data.AssignTypes || [];
             this.allEmployees = data.Employees || [];
             this.positionOptions = data.Positions || [];
@@ -244,13 +256,21 @@ export default {
       );
     },
     onEmployeeSelect(item) {
-      if (item.employee && !item.position) {
-        const emp = this.allEmployees.find((e) => e.employeeId === item.employee.employeeId);
-        if (emp) {
-          item.position = this.positionOptions.find(
-            (p) => p.PositionId === emp.PositionId
-          );
-        }
+      if (!item.employee) {
+        // Jika employee dihapus, posisi juga direset
+        item.position = null;
+        item.isHoApprover = false; // reset juga!
+        return;
+      }
+      // Normal: jika pilih employee, posisi otomatis terisi
+      const emp = this.allEmployees.find(
+        (e) => e.EmployeeID === item.employee.EmployeeID
+      );
+      if (emp) {
+        item.position = this.positionOptions.find(
+          (p) => p.PositionId === emp.PositionId
+        );
+        item.isHoApprover = !!emp.IsHOApprover;
       }
     },
     onPositionSelect(item) {
@@ -262,19 +282,102 @@ export default {
       }
     },
     getPositionText(item) {
-      if (typeof item.position === 'string') return item.position;
-      if (item.position && item.position.PositionName) return item.position.PositionName;
-      return '';
+      if (typeof item.position === "string") return item.position;
+      if (item.position && item.position.PositionName)
+        return item.position.PositionName;
+      return "";
     },
     getEmployeeText(item) {
-      if (typeof item.employee === 'string') return item.employee;
-      if (item.employee && item.employee.EmployeeName) return item.employee.EmployeeName;
-      return '';
+      if (typeof item.employee === "string") return item.employee;
+      if (item.employee && item.employee.EmployeeName)
+        return item.employee.EmployeeName;
+      return "";
     },
     getAssignTypeText(item) {
-      if (typeof item.assignType === 'string') return item.assignType;
-      if (item.assignType && item.assignType.Description) return item.assignType.Description;
-      return '';
+      if (typeof item.assignType === "string") return item.assignType;
+      if (item.assignType && item.assignType.Description)
+        return item.assignType.Description;
+      return "";
+    },
+    snapshotInitialApprovalTo() {
+      this._initialApprovalTo = this.approvals.map((f) => ({
+        position: f.position,
+        employee: f.employee,
+        assignType: f.assignType,
+        isHoApprover: f.isHoApprover,
+      }));
+    },
+    isApprovalToChanged() {
+      if (!this._initialApprovalTo) return true;
+      const arr1 = this.approvals.map((f) => ({
+        position: f.position,
+        employee: f.employee,
+        assignType: f.assignType,
+        isHoApprover: f.isHoApprover,
+      }));
+      const arr2 = this._initialApprovalTo.map((f) => ({
+        position: f.position,
+        employee: f.employee,
+        assignType: f.assignType,
+        isHoApprover: f.isHoApprover,
+      }));
+      return JSON.stringify(arr1) !== JSON.stringify(arr2);
+    },
+    async saveApprovalTo() {
+      if (!this.isApprovalToChanged()) {
+        // Tidak perlu save ulang jika tidak ada perubahan
+        return true;
+      }
+      const memoId = this.$store.state.memoId;  
+      var branchCode = variable.currentUser().BranchRoleId
+      if (branchCode === 1) {
+        branchCode = '01'
+      }
+      console.log('bcd: ', branchCode);
+      
+      if (!memoId) {
+        this.$swal(
+          "Error",
+          "Memo ID tidak ditemukan!",
+          "error"
+        );
+        return false;
+      }
+
+      // Siapkan payload sesuai backend
+      const payload = {
+        MemoID: memoId,
+        BranchCode: branchCode,
+        Approvers: this.approvals.map((item, idx) => ({
+          Sequence: idx + 1,
+          PositionID: item.position?.PositionId || "",
+          EmployeeID: item.employee?.EmployeeID || "",
+          AssignTypeID:
+            item.assignType?.AssignTypeID || item.assignType?.Value || 2,
+          IsHOApprover: !!item.isHoApprover,
+        })),
+      };
+
+      try {
+        const res = await BusinessExpenditureService.SaveApprovalTo(payload);
+        if (res.Status === 1) {
+          this.snapshotInitialApprovalTo();
+          this.$router.push({ name: "Business Eexpenditure" });
+          return true;
+        } else {
+          this.$swal(
+            "Error",
+            res.data && res.data.Errors
+              ? res.data.Errors
+              : "Failed to save Approval To",
+            "error"
+          );
+          return false;
+        }
+      } catch (e) {
+        this.$swal("Error", e.message || "Failed to save Approval To", "error");
+        return false;
+      }
     },
   },
 };
@@ -295,5 +398,14 @@ export default {
 }
 .attachment-item:hover {
   background-color: #f8f9fa;
+}
+.text-muted {
+  font-size: 10px;
+}
+.ishoapp {
+  font-size: 10px;
+  background-color: rgb(221, 193, 248);
+  padding: 2px;
+  border-radius: 5px;
 }
 </style>
