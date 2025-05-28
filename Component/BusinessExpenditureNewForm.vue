@@ -538,7 +538,7 @@
           <div class="col-md-4 min-width-input">
             <v-select
               v-model="item.position"
-              :options="formData.positionOptions"
+              :options="getAvailablePositions(index)"
               label="Name"
               clearable
               placeholder="Position"
@@ -547,7 +547,7 @@
           <div class="col-md-3 min-width-input">
             <v-select
               v-model="item.employee"
-              :options="formData.employeeOptions"
+              :options="getAvailableEmployees(index)"
               label="Name"
               clearable
               placeholder="Employee"
@@ -588,6 +588,7 @@ import { BModal } from "bootstrap-vue";
 import BusinessExpenditureService from "../Script/BusinessExpenditureService";
 import variable from "../../../../Shared/Variable.vue";
 import httpStatusCode from "../../../../Shared/Constants.vue";
+import _ from "lodash";
 
 export default {
   name: "businessExpenditure",
@@ -599,7 +600,7 @@ export default {
     value: {
       type: Object,
       required: true,
-    },
+    }
   },
 
   data() {
@@ -607,45 +608,193 @@ export default {
       formData: {
         participants: [],
         promotors: [],
-      }, // local copy, diisi via watch dari modelValue
+        expenseTypeSelected: null,
+        expenseTypes: [],
+        expenseDetailSelected: null,
+        expenseDetails: [],
+        expenseDate: '',
+        categorySelected: null,
+        categories: [],
+        otherDetail: '',
+        venueName: '',
+        venueAddress: '',
+        priceAmount: '',
+        purpose: '',
+        gratificationNotes: '',
+        expenseStatus: [],
+        tempParticipants: [
+          { name: '', position: '', company: '', status: '' }
+        ],
+        tempPromotors: [
+          { divisi: null, position: null, employee: null }
+        ],
+        divisiOptions: [],
+        positionOptions: [],
+        employeeOptions: [],
+        editIndex: null,
+        editPromotorIndex: null,
+      },
       showParticipantModal: false,
       showPromotorModal: false,
       allExpenseDetailsMap: {},
       memoIdLocal: null,
       initialFormData: null,
+      // Tambahan untuk pending id agar binding dropdown setelah options ready
+      pendingExpenseTypeId: null,
+      pendingExpenseDetailId: null,
+      pendingCategoryId: null,
+      // Tambahan untuk pending Name agar binding by Name setelah options ready
+      pendingExpenseTypeName: null,
+      pendingExpenseDetailName: null,
+      pendingCategoryName: null,
     };
   },
   watch: {
     value: {
-      // Ganti dari modelValue ke value
       immediate: true,
       deep: true,
       handler(newVal) {
+        // console.log('[Watcher value] newVal:', JSON.parse(JSON.stringify(newVal)));
         if (newVal && typeof newVal === "object") {
-          this.formData = {
-            participants: newVal.participants || [],
-            promotors: newVal.promotors || [],
-            ...newVal,
-          };
+          this.memoIdLocal = newVal.MemoId || null;
+          // console.log("New value:", newVal);
+          
+          // Simpan id ke pending agar bisa di-bind setelah options ready
+          this.pendingExpenseTypeId = null;
+          this.pendingExpenseDetailId = null;
+          this.pendingCategoryId = null;
+          // Field lain tetap langsung diisi
+          this.formData.expenseDate = newVal.ExpenseDate || '';
+          this.formData.otherDetail = newVal.OtherDetail || newVal.Detail || newVal.other_detail || newVal.Others || '';
+          this.formData.venueName = newVal.VenueName || '';
+          this.formData.venueAddress = newVal.VenueAddress || '';
+          this.formData.priceAmount = newVal.PriceAmount ? String(newVal.PriceAmount) : '';
+          this.formData.purpose = newVal.Purpose || '';
+          this.formData.gratificationNotes = newVal.GratificationNotes || '';
+          // Participants
+          if (Array.isArray(newVal.Participant)) {
+            this.formData.participants = newVal.Participant.map(p => ({
+              name: p.Name || '',
+              position: p.Position || '',
+              company: p.CompanyOrDivision || '',
+              status: this.formData.expenseStatus.find(s => s.Name === p.Status) || { Name: p.Status || '' }
+            }));
+          } else {
+            this.formData.participants = [];
+          }
+          // Promotors
+          if (Array.isArray(newVal.Promotor)) {
+            this.formData.promotors = newVal.Promotor.map(p => ({
+              divisi: p.Division || '',
+              position: p.Position || '',
+              employee: { Name: p.Name || '' }
+            }));
+          } else {
+            this.formData.promotors = [];
+          }
+          // Binding dropdown by Name (setelah options masuk)
+          this.$nextTick(() => {
+            // ExpenseType
+            if (newVal.ExpenseType) {
+              if (this.formData.expenseTypes.length) {
+                this.formData.expenseTypeSelected = this.formData.expenseTypes.find(e => e.Name === newVal.ExpenseType) || null;
+                this.pendingExpenseTypeName = null;
+              } else {
+                this.pendingExpenseTypeName = newVal.ExpenseType;
+              }
+            } else {
+              this.formData.expenseTypeSelected = null;
+              this.pendingExpenseTypeName = null;
+            }
+            // ExpenseTypeDetail
+            if (newVal.ExpenseTypeDetail) {
+              if (this.formData.expenseDetails.length) {
+                this.formData.expenseDetailSelected = this.formData.expenseDetails.find(e => e.Name === newVal.ExpenseTypeDetail) || null;
+                this.pendingExpenseDetailName = null;
+              } else {
+                this.pendingExpenseDetailName = newVal.ExpenseTypeDetail;
+              }
+            } else {
+              this.formData.expenseDetailSelected = null;
+              this.pendingExpenseDetailName = null;
+            }
+            // Category
+            if (newVal.Category) {
+              if (this.formData.categories.length) {
+                this.formData.categorySelected = this.formData.categories.find(e => e.Name === newVal.Category) || null;
+                this.pendingCategoryName = null;
+              } else {
+                this.pendingCategoryName = newVal.Category;
+              }
+            } else {
+              this.formData.categorySelected = null;
+              this.pendingCategoryName = null;
+            }
+          });
+          // console.log('[Watcher value] formData.otherDetail:', this.formData.otherDetail);
         } else {
-          this.formData = {
-            participants: [],
-            promotors: [],
-          };
+          this.pendingExpenseTypeId = null;
+          this.pendingExpenseDetailId = null;
+          this.pendingCategoryId = null;
+          this.formData.expenseDate = '';
+          this.formData.otherDetail = '';
+          this.formData.venueName = '';
+          this.formData.venueAddress = '';
+          this.formData.priceAmount = '';
+          this.formData.purpose = '';
+          this.formData.gratificationNotes = '';
+          this.formData.participants = [];
+          this.formData.promotors = [];
+        }
+        this.initialFormData = this.cloneFormData(this.formData);
+        // console.log("Initial form data:", JSON.parse(JSON.stringify(this.initialFormData)));
+        this.$nextTick(() => {
+          this.resetInitialFormDataIfReady();
+        });
+      },
+    },
+    'formData.expenseTypeSelected': {
+      handler(newVal) {
+        if (newVal && newVal.Id) {
+          this.onChangeExpenseType(newVal);
+        } else {
+          this.formData.expenseDetails = [];
+          this.formData.expenseDetailSelected = null;
+        }
+        this.$nextTick(() => {
+          this.resetInitialFormDataIfReady();
+        });
+      },
+      immediate: true,
+      deep: true
+    },
+    'formData.expenseDetailSelected': {
+      handler() {
+        this.$nextTick(() => {
+          this.resetInitialFormDataIfReady();
+        });
+      },
+      deep: true
+    },
+    'formData.categorySelected': {
+      handler() {
+        this.$nextTick(() => {
+          this.resetInitialFormDataIfReady();
+        });
+      },
+      deep: true
+    },
+    'formData.expenseDetails': {
+      handler(newVal) {
+        // Jika ada pendingExpenseDetailName, binding by Name setelah options expenseDetails masuk
+        if (this.pendingExpenseDetailName && Array.isArray(newVal) && newVal.length) {
+          this.formData.expenseDetailSelected = newVal.find(e => e.Name === this.pendingExpenseDetailName) || null;
+          this.pendingExpenseDetailName = null;
         }
       },
+      immediate: false,
+      deep: true
     },
-
-    formData: {
-      deep: true,
-      handler(newVal) {
-        // Emit event 'input' di Vue 2, bukan 'update:modelValue'
-        this.$emit("input", newVal);
-      },
-    },
-  },
-  created() {
-    console.log("Data diterima di child:", this.value);
   },
   computed: {
     shouldShowDetailInput() {
@@ -689,8 +838,11 @@ export default {
     this.fetchExpenseCombo("Status_PEB", "expenseStatus");
     this.preloadExpenseDetails(); // Tetap dipanggil terpisah
     this.getDivisiWithPositionsAndEmployees();
-    this.$store.commit("clearMemoId");
+    // this.$store.commit("clearMemoId");
     this.initialFormData = this.cloneFormData(this.formData);
+    // console.log("Initial form data:", this.initialFormData);
+    // console.log("form data:", this.formData);
+    
   },
 
   methods: {
@@ -857,6 +1009,19 @@ export default {
               }));
               // Assign ke formData dynamic
               this.$set(this.formData, targetKey, optionList);
+              // Setelah options ready, bind selected jika ada pending Name
+              if (targetKey === 'expenseTypes' && this.pendingExpenseTypeName) {
+                this.formData.expenseTypeSelected = optionList.find(e => e.Name === this.pendingExpenseTypeName) || null;
+                this.pendingExpenseTypeName = null;
+              }
+              if (targetKey === 'expenseDetails' && this.pendingExpenseDetailName) {
+                this.formData.expenseDetailSelected = optionList.find(e => e.Name === this.pendingExpenseDetailName) || null;
+                this.pendingExpenseDetailName = null;
+              }
+              if (targetKey === 'categories' && this.pendingCategoryName) {
+                this.formData.categorySelected = optionList.find(e => e.Name === this.pendingCategoryName) || null;
+                this.pendingCategoryName = null;
+              }
             }
           } else {
             this.$swal("Info", this.$globalfunc.ErrorFormat(response), "error");
@@ -881,7 +1046,14 @@ export default {
 
       // Ambil dari cache, tidak panggil API lagi
       this.formData.expenseDetails = this.allExpenseDetailsMap[cat_val] || [];
-      this.formData.expenseDetailSelected = { Id: "", Name: "" };
+
+      // Perbaikan: jika ada pendingExpenseDetailName, binding ke selected by Name
+      if (this.pendingExpenseDetailName) {
+        this.formData.expenseDetailSelected = this.formData.expenseDetails.find(e => e.Name === this.pendingExpenseDetailName) || { Id: '', Name: '' };
+        this.pendingExpenseDetailName = null;
+      } else {
+        this.formData.expenseDetailSelected = { Id: '', Name: '' };
+      }
     },
     preloadExpenseDetails() {
       const categories = ["BUSREL_DETAIL", "PARINREW_DETAIL", "ENTER_DETAIL"];
@@ -955,7 +1127,7 @@ export default {
               this.formData.divisiOptions = [];
             } else {
               this.formData.divisiOptions = response.data.Data;
-              console.log("datapromotors: ", this.formData.divisiOptions);
+              // console.log("datapromotors: ", this.formData.divisiOptions);
             }
           } else {
             this.$swal("Info", this.$globalfunc.ErrorFormat(response), "error");
@@ -986,9 +1158,22 @@ export default {
         JSON.stringify(this.formData) !== JSON.stringify(this.initialFormData)
       );
     },
+    resetInitialFormDataIfReady() {
+      if (
+        !this.pendingExpenseTypeId &&
+        !this.pendingExpenseDetailId &&
+        !this.pendingCategoryId &&
+        this.formData.expenseTypeSelected &&
+        this.formData.expenseDetailSelected &&
+        this.formData.categorySelected
+      ) {
+        this.initialFormData = this.cloneFormData(this.formData);
+        console.log('[resetInitialFormDataIfReady] initialFormData updated:', this.initialFormData);
+      }
+    },
     saveClick() {
-      console.log("data asli: ", this.initialFormData);
-      console.log("data ubah: ", this.formData);
+      // console.log("data asli: ", this.initialFormData);
+      // console.log("data ubah: ", this.formData);
 
       if (!this.isFormChanged()) {
         console.log("Tidak ada perubahan pada form, tidak perlu disimpan.");
@@ -1044,7 +1229,7 @@ export default {
                   this.$swal("Info", "Data berhasil disimpan", "success");
 
                   // console.log("MemoID:", response.Data.MemoId);
-                  this.$store.commit("setMemoId", response.Data.MemoId);
+                  this.$store.commit("setMemoId", response.Data.MemoId); 
                   this.memoIdLocal = this.$store.state.memoId;
                   // console.log("memoID: ", this.$store.state.memoId);
                   this.initialFormData = null;
